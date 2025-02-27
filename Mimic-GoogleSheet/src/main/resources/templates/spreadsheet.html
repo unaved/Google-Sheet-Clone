@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Web Spreadsheet</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+        }
+
+        .header {
+            background: #f8f9fa;
+            padding: 8px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .toolbar {
+            background: #f8f9fa;
+            padding: 8px;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .toolbar-group {
+            display: flex;
+            gap: 5px;
+            padding: 0 10px;
+            border-right: 1px solid #ddd;
+        }
+
+        .toolbar button {
+            background: #fff;
+            border: 1px solid #ddd;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .toolbar button:hover {
+            background: #f1f3f4;
+        }
+
+        .toolbar select, .toolbar input {
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .formula-bar {
+            padding: 8px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .formula-bar input {
+            flex-grow: 1;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .spreadsheet-container {
+            overflow: auto;
+            height: calc(100vh - 130px);
+        }
+
+        .spreadsheet {
+            border-collapse: collapse;
+            background: #fff;
+            table-layout: fixed;
+        }
+
+        .spreadsheet th {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            padding: 5px;
+            min-width: 50px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .spreadsheet td {
+            border: 1px solid #ddd;
+            padding: 5px;
+            min-width: 100px;
+            height: 25px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .row-header {
+            background: #f8f9fa;
+            position: sticky;
+            left: 0;
+            z-index: 5;
+        }
+
+        .cell-selected {
+            background: #e8f0fe;
+            outline: 2px solid #1a73e8;
+        }
+
+        .context-menu {
+            position: fixed;
+            background: white;
+            border: 1px solid #ddd;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+            padding: 5px 0;
+            z-index: 1000;
+        }
+
+        .context-menu-item {
+            padding: 5px 20px;
+            cursor: pointer;
+        }
+
+        .context-menu-item:hover {
+            background: #f1f3f4;
+        }
+
+        .status-bar {
+            background: #f8f9fa;
+            padding: 5px 10px;
+            border-top: 1px solid #ddd;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <input type="text" placeholder="Untitled spreadsheet" style="border:none;background:transparent;font-size:18px;">
+    </div>
+
+    <div class="toolbar">
+        <div class="toolbar-group">
+            <button onclick="saveSpreadsheet()"><i class="material-icons">save</i></button>
+            <button onclick="loadSpreadsheet()"><i class="material-icons">folder_open</i></button>
+        </div>
+        
+        <div class="toolbar-group">
+            <button onclick="undo()"><i class="material-icons">undo</i></button>
+            <button onclick="redo()"><i class="material-icons">redo</i></button>
+        </div>
+
+        <div class="toolbar-group">
+            <select id="font-family">
+                <option value="Arial">Arial</option>
+                <option value="Times New Roman">Times New Roman</option>
+                <option value="Courier New">Courier New</option>
+            </select>
+            <select id="font-size">
+                <option value="8">8</option>
+                <option value="10">10</option>
+                <option value="12" selected>12</option>
+                <option value="14">14</option>
+                <option value="16">16</option>
+                <option value="18">18</option>
+            </select>
+        </div>
+
+        <div class="toolbar-group">
+            <button onclick="formatText('bold')"><i class="material-icons">format_bold</i></button>
+            <button onclick="formatText('italic')"><i class="material-icons">format_italic</i></button>
+            <button onclick="formatText('underline')"><i class="material-icons">format_underlined</i></button>
+        </div>
+
+        <div class="toolbar-group">
+            <button onclick="alignText('left')"><i class="material-icons">format_align_left</i></button>
+            <button onclick="alignText('center')"><i class="material-icons">format_align_center</i></button>
+            <button onclick="alignText('right')"><i class="material-icons">format_align_right</i></button>
+        </div>
+
+        <div class="toolbar-group">
+            <input type="color" onchange="setFontColor(this.value)">
+            <input type="color" onchange="setBackgroundColor(this.value)">
+        </div>
+    </div>
+
+    <div class="formula-bar">
+        <span class="material-icons">function</span>
+        <input type="text" id="formula-input" placeholder="Enter formula">
+    </div>
+
+    <div class="spreadsheet-container">
+        <table id="spreadsheet" class="spreadsheet">
+            <thead>
+                <tr>
+                    <th class="row-header">#</th>
+                    <th th:each="col : ${#numbers.sequence(1, 10)}" 
+                        th:text="${'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.charAt(col - 1)}">
+                    </th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr th:each="row : ${#numbers.sequence(1, 10)}">
+                    <th class="row-header" th:text="${row}"></th>
+                    <td th:each="col : ${#numbers.sequence(1, 10)}"
+                        th:attr="data-row=${row},data-col=${col}"
+                        contenteditable="true"
+                        onclick="selectCell(this)">
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="status-bar">
+        Ready
+    </div>
+
+    <script th:inline="javascript">
+        let selectedCell = null;
+        let undoStack = [];
+        let redoStack = [];
+
+        function selectCell(cell) {
+            if (selectedCell) {
+                selectedCell.classList.remove('cell-selected');
+            }
+            selectedCell = cell;
+            cell.classList.add('cell-selected');
+            document.getElementById('formula-input').value = cell.dataset.formula || cell.textContent;
+        }
+
+        function formatText(style) {
+            if (!selectedCell) return;
+            saveState();
+            
+            switch(style) {
+                case 'bold':
+                    selectedCell.style.fontWeight = 
+                        selectedCell.style.fontWeight === 'bold' ? 'normal' : 'bold';
+                    break;
+                case 'italic':
+                    selectedCell.style.fontStyle = 
+                        selectedCell.style.fontStyle === 'italic' ? 'normal' : 'italic';
+                    break;
+                case 'underline':
+                    selectedCell.style.textDecoration = 
+                        selectedCell.style.textDecoration === 'underline' ? 'none' : 'underline';
+                    break;
+            }
+        }
+
+        function alignText(alignment) {
+            if (!selectedCell) return;
+            saveState();
+            selectedCell.style.textAlign = alignment;
+        }
+
+        function setFontColor(color) {
+            if (!selectedCell) return;
+            saveState();
+            selectedCell.style.color = color;
+        }
+
+        function setBackgroundColor(color) {
+            if (!selectedCell) return;
+            saveState();
+            selectedCell.style.backgroundColor = color;
+        }
+
+        function saveState() {
+            undoStack.push(document.getElementById('spreadsheet').innerHTML);
+            redoStack = [];
+        }
+
+        function undo() {
+            if (undoStack.length === 0) return;
+            redoStack.push(document.getElementById('spreadsheet').innerHTML);
+            document.getElementById('spreadsheet').innerHTML = undoStack.pop();
+        }
+
+        function redo() {
+            if (redoStack.length === 0) return;
+            undoStack.push(document.getElementById('spreadsheet').innerHTML);
+            document.getElementById('spreadsheet').innerHTML = redoStack.pop();
+        }
+
+        document.getElementById('formula-input').addEventListener('keyup', function(e) {
+            if (e.key === 'Enter' && selectedCell) {
+                saveState();
+                const formula = this.value;
+                if (formula.startsWith('=')) {
+                    selectedCell.dataset.formula = formula;
+                    try {
+                        selectedCell.textContent = evaluateFormula(formula);
+                    } catch (error) {
+                        selectedCell.textContent = '#ERROR';
+                    }
+                } else {
+                    selectedCell.textContent = formula;
+                    delete selectedCell.dataset.formula;
+                }
+            }
+        });
+
+        function evaluateFormula(formula) {
+            // Remove the '=' sign and evaluate
+            formula = formula.substring(1);
+            
+            // Replace cell references (e.g., A1) with their values
+            formula = formula.replace(/[A-Z]\d+/g, function(cell) {
+                const col = cell.match(/[A-Z]/)[0];
+                const row = cell.match(/\d+/)[0];
+                const targetCell = document.querySelector(
+                    `td[data-col="${col.charCodeAt(0) - 64}"][data-row="${row}"]`
+                );
+                return targetCell ? targetCell.textContent || '0' : '0';
+            });
+            
+            return eval(formula);
+        }
+
+        // Save spreadsheet data
+        function saveSpreadsheet() {
+            const data = {
+                cells: {},
+                title: document.querySelector('.header input').value
+            };
+            
+            document.querySelectorAll('#spreadsheet td').forEach(cell => {
+                if (cell.textContent || cell.style.cssText) {
+                    data.cells[`${cell.dataset.col}-${cell.dataset.row}`] = {
+                        content: cell.textContent,
+                        style: cell.style.cssText,
+                        formula: cell.dataset.formula
+                    };
+                }
+            });
+
+            fetch('/api/spreadsheet/save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.querySelector('.status-bar').textContent = 'Saved successfully';
+                setTimeout(() => {
+                    document.querySelector('.status-bar').textContent = 'Ready';
+                }, 2000);
+            })
+            .catch(error => {
+                document.querySelector('.status-bar').textContent = 'Error saving spreadsheet';
+            });
+        }
+
+        // Load spreadsheet data
+        function loadSpreadsheet() {
+            fetch('/api/spreadsheet/load')
+            .then(response => response.json())
+            .then(data => {
+                document.querySelector('.header input').value = data.title || '';
+                
+                // Clear existing content
+                document.querySelectorAll('#spreadsheet td').forEach(cell => {
+                    cell.textContent = '';
+                    cell.style.cssText = '';
+                    delete cell.dataset.formula;
+                });
+
+                // Load saved data
+                Object.entries(data.cells || {}).forEach(([key, value]) => {
+                    const [col, row] = key.split('-');
+                    const cell = document.querySelector(
+                        `td[data-col="${col}"][data-row="${row}"]`
+                    );
+                    if (cell) {
+                        cell.textContent = value.content;
+                        cell.style.cssText = value.style;
+                        if (value.formula) {
+                            cell.dataset.formula = value.formula;
+                        }
+                    }
+                });
+
+                document.querySelector('.status-bar').textContent = 'Loaded successfully';
+                setTimeout(() => {
+                    document.querySelector('.status-bar').textContent = 'Ready';
+                }, 2000);
+            })
+            .catch(error => {
+                document.querySelector('.status-bar').textContent = 'Error loading spreadsheet';
+            });
+        }
+    </script>
+</body>
+</html> 
